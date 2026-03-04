@@ -1,4 +1,4 @@
-# SonicScribe
+# [SonicScribe](https://sonicscribe.rohanprajapati.dev/)
 
 Professional-grade, **on-device transcription** for creators.
 
@@ -7,7 +7,7 @@ SonicScribe runs speech-to-text directly in your browser using **Transformers.js
 
 
 ## Hosted URL
-👉🔗[Sonic Scribe](https://sonicscribe.rohanprajapati.dev/)
+[Sonic Scribe](https://sonicscribe.rohanprajapati.dev/)
 
 ## Why SonicScribe
 
