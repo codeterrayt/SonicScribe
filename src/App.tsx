@@ -5,7 +5,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Upload, FileAudio, FileVideo, Download, Settings, Loader2, CheckCircle2, AlertCircle, Play, Trash2, Cpu, Zap, RotateCcw, Clock } from 'lucide-react';
+import { Upload, FileAudio, FileVideo, Download, Settings, Loader2, CheckCircle2, AlertCircle, Play, Trash2, Cpu, Zap, RotateCcw, Clock, Sun, Moon, Github, Shield, X } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -13,7 +13,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-type Theme = 'theme-blockwork' | 'theme-risograph' | 'theme-spectral';
+type Theme = 'theme-light' | 'theme-dark';
 
 const MODELS = [
   {
@@ -41,18 +41,19 @@ type HistoryItem = {
   filename: string;
   date: Date;
   chunks: any[];
+  processingTime: number;
 };
 
 export default function App() {
-  const [theme, setTheme] = useState<Theme>('theme-blockwork');
+  const [theme, setTheme] = useState<Theme>('theme-light');
   const [file, setFile] = useState<File | null>(null);
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
   const [device, setDevice] = useState<'wasm' | 'webgpu' | null>(null); // Available device
   const [selectedDevice, setSelectedDevice] = useState<'wasm' | 'webgpu'>('wasm'); // User selected device
-  
+
   const [modelStatus, setModelStatus] = useState<'idle' | 'loading' | 'ready'>('idle');
   const [transcriptionStatus, setTranscriptionStatus] = useState<'idle' | 'processing' | 'complete' | 'error'>('idle');
-  
+
   const [progress, setProgress] = useState<{ file?: string; progress?: number; status?: string }>({});
   const [transcriptionChunks, setTranscriptionChunks] = useState<any[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
@@ -60,10 +61,12 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
 
   const worker = useRef<Worker | null>(null);
   const outputEndRef = useRef<HTMLDivElement>(null);
   const chunksRef = useRef<any[]>([]);
+  const startTimeRef = useRef<number>(0);
 
   useEffect(() => {
     document.body.className = theme;
@@ -110,7 +113,7 @@ export default function App() {
         case 'complete':
           // Handle chunk completion
           const { text, chunks, index, offset } = e.data.data;
-          
+
           // Adjust timestamps
           const adjustedChunks = chunks ? chunks.map((c: any) => ({
             ...c,
@@ -122,26 +125,28 @@ export default function App() {
 
           // Update accumulated chunks ref synchronously
           accumulatedChunksRef.current = [...accumulatedChunksRef.current, ...adjustedChunks].sort((a, b) => a.timestamp[0] - b.timestamp[0]);
-          
+
           // Update UI state
           setTranscriptionChunks([...accumulatedChunksRef.current]);
-          
+
           // Update progress
           completedChunksRef.current += 1;
           const currentCompleted = completedChunksRef.current;
           const currentTotal = totalChunksRef.current;
-          
+
           setProgressStats({ completed: currentCompleted, total: currentTotal });
 
           if (currentCompleted >= currentTotal && currentTotal > 0) {
-             setTranscriptionStatus('complete');
-             // Save to history using the fully accumulated ref
-             setHistory(h => [{
-                id: Date.now().toString(),
-                filename: file?.name || 'Unknown Audio',
-                date: new Date(),
-                chunks: [...accumulatedChunksRef.current]
-             }, ...h]);
+            setTranscriptionStatus('complete');
+            const processingTime = (Date.now() - startTimeRef.current) / 1000;
+            // Save to history using the fully accumulated ref
+            setHistory(h => [{
+              id: Date.now().toString(),
+              filename: file?.name || 'Unknown Audio',
+              date: new Date(),
+              chunks: [...accumulatedChunksRef.current],
+              processingTime
+            }, ...h]);
           }
           break;
         case 'error':
@@ -156,7 +161,7 @@ export default function App() {
     return () => {
       worker.current?.removeEventListener('message', onMessageReceived);
     };
-  }, [file]); 
+  }, [file]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -214,12 +219,13 @@ export default function App() {
     setTranscriptionChunks([]);
     accumulatedChunksRef.current = []; // Reset accumulator
     setActiveHistoryId(null);
-    
+    startTimeRef.current = Date.now();
+
     try {
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       const arrayBuffer = await file.arrayBuffer();
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-      
+
       let audioData;
       if (audioBuffer.numberOfChannels === 2) {
         const SCALING_FACTOR = Math.sqrt(2);
@@ -234,11 +240,11 @@ export default function App() {
       }
 
       setProcessingStage('transcribing');
-      
+
       // Calculate chunks (30 seconds * 16000 samples/sec)
       const CHUNK_SIZE = 30 * 16000;
       const numChunks = Math.ceil(audioData.length / CHUNK_SIZE);
-      
+
       totalChunksRef.current = numChunks;
       completedChunksRef.current = 0;
       setProgressStats({ completed: 0, total: numChunks });
@@ -248,7 +254,7 @@ export default function App() {
         const start = i * CHUNK_SIZE;
         const end = Math.min(start + CHUNK_SIZE, audioData.length);
         const chunk = audioData.slice(start, end);
-        
+
         worker.current?.postMessage({
           type: 'transcribe',
           model: selectedModel,
@@ -267,9 +273,9 @@ export default function App() {
 
   const downloadTranscription = (format: 'txt' | 'srt', chunksToExport: any[], filename: string) => {
     if (chunksToExport.length === 0) return;
-    
+
     let text = '';
-    
+
     if (format === 'srt') {
       text = chunksToExport.map((chunk, i) => {
         const start = formatTimeSRT(chunk.timestamp[0]);
@@ -302,11 +308,11 @@ export default function App() {
     const minutes = Math.floor((time % 3600) / 60);
     const seconds = Math.floor(time % 60);
     const milliseconds = Math.floor((time % 1) * 1000);
-    
+
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')},${milliseconds.toString().padStart(3, '0')}`;
   };
 
-  const activeChunks = activeHistoryId 
+  const activeChunks = activeHistoryId
     ? history.find(h => h.id === activeHistoryId)?.chunks || []
     : transcriptionChunks;
 
@@ -316,26 +322,19 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8 relative z-10">
-      
+
       {/* Theme Switcher */}
       <div className="fixed top-4 right-4 flex gap-2 z-50">
-        {(['theme-blockwork', 'theme-risograph', 'theme-spectral'] as Theme[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTheme(t)}
-            className={cn(
-              "w-8 h-8 rounded-full border-2 transition-transform hover:scale-110",
-              theme === t ? "border-white scale-110 shadow-lg" : "border-transparent opacity-50",
-              t === 'theme-blockwork' ? "bg-[#ff3300]" : 
-              t === 'theme-risograph' ? "bg-[#ff4081]" : 
-              "bg-[#ff00ff]"
-            )}
-            title={t.replace('theme-', '')}
-          />
-        ))}
+        <button
+          onClick={() => setTheme(theme === 'theme-light' ? 'theme-dark' : 'theme-light')}
+          className="p-2 rounded-full border-2 border-[var(--border-color)] bg-[var(--surface-color)] hover:scale-110 transition-transform shadow-lg"
+          title={theme === 'theme-light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+        >
+          {theme === 'theme-light' ? <Moon size={20} /> : <Sun size={20} />}
+        </button>
       </div>
 
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-7xl space-y-8"
@@ -347,7 +346,7 @@ export default function App() {
           <p className="text-lg md:text-xl font-medium text-[var(--text-muted)] max-w-2xl mx-auto">
             Professional-grade, on-device transcription for creators. Zero server uploads. Infinite privacy.
           </p>
-          
+
           {selectedDevice && (
             <div className="flex items-center justify-center gap-2 text-xs font-mono font-bold uppercase border-2 border-[var(--border-color)] p-2 rounded w-fit mx-auto bg-[var(--surface-color)]">
               {selectedDevice === 'webgpu' ? (
@@ -360,19 +359,19 @@ export default function App() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          
+
           {/* Left Column: Controls */}
           <div className="lg:col-span-1 space-y-6">
             <div className="card p-6 space-y-6">
               <h2 className="text-xl font-bold uppercase tracking-wider border-b-2 border-[var(--border-color)] pb-2">
                 1. Select Model
               </h2>
-              
+
               <div className="flex items-center justify-between bg-[var(--surface-color)] p-3 border-2 border-[var(--border-color)] rounded">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold uppercase">Device:</span>
                   <div className="relative">
-                    <select 
+                    <select
                       value={selectedDevice}
                       onChange={(e) => {
                         setSelectedDevice(e.target.value as 'wasm' | 'webgpu');
@@ -385,9 +384,9 @@ export default function App() {
                     </select>
                   </div>
                 </div>
-                
+
                 <div className="relative">
-                  <button 
+                  <button
                     className="text-[var(--text-muted)] hover:text-[var(--accent-color)] transition-colors"
                     onMouseEnter={() => setShowTooltip(true)}
                     onMouseLeave={() => setShowTooltip(false)}
@@ -396,7 +395,7 @@ export default function App() {
                   </button>
                   <AnimatePresence>
                     {showTooltip && (
-                      <motion.div 
+                      <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 10 }}
@@ -412,21 +411,21 @@ export default function App() {
 
               <div className="space-y-3">
                 {MODELS.map((m) => (
-                  <label 
+                  <label
                     key={m.id}
                     className={cn(
                       "flex flex-col p-3 border-2 cursor-pointer transition-all",
-                      selectedModel === m.id 
-                        ? "border-[var(--accent-color)] bg-[var(--accent-color)]/10" 
+                      selectedModel === m.id
+                        ? "border-[var(--accent-color)] bg-[var(--accent-color)]/10"
                         : "border-[var(--border-color)] opacity-70 hover:opacity-100"
                     )}
                   >
                     <div className="flex items-center justify-between w-full">
                       <div className="flex items-center gap-2">
-                        <input 
-                          type="radio" 
-                          name="model" 
-                          value={m.id} 
+                        <input
+                          type="radio"
+                          name="model"
+                          value={m.id}
                           checked={selectedModel === m.id}
                           onChange={(e) => {
                             setSelectedModel(e.target.value);
@@ -447,9 +446,9 @@ export default function App() {
                   </label>
                 ))}
               </div>
-              
+
               {modelStatus === 'idle' && (
-                <button 
+                <button
                   onClick={loadModel}
                   className="btn-primary w-full py-3 flex items-center justify-center gap-2"
                 >
@@ -464,7 +463,7 @@ export default function App() {
                     <span>{progress.progress ? `${Math.round(progress.progress)}%` : ''}</span>
                   </div>
                   <div className="progress-bar h-3 w-full">
-                    <motion.div 
+                    <motion.div
                       className="progress-fill h-full"
                       initial={{ width: 0 }}
                       animate={{ width: `${progress.progress || 0}%` }}
@@ -484,7 +483,7 @@ export default function App() {
               <h2 className="text-xl font-bold uppercase tracking-wider border-b-2 border-[var(--border-color)] pb-2">
                 2. Upload Media
               </h2>
-              
+
               {!file ? (
                 <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-[var(--border-color)] cursor-pointer hover:bg-[var(--accent-color)]/5 transition-colors">
                   <div className="flex flex-col items-center justify-center pt-5 pb-6">
@@ -501,7 +500,7 @@ export default function App() {
                     <p className="text-sm font-bold truncate">{file.name}</p>
                     <p className="text-xs font-mono text-[var(--text-muted)]">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
                   </div>
-                  <button 
+                  <button
                     onClick={clearFile}
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-[var(--text-muted)] hover:text-red-500 transition-colors"
                     title="Remove file"
@@ -511,7 +510,7 @@ export default function App() {
                 </div>
               )}
 
-              <button 
+              <button
                 onClick={transcribe}
                 disabled={!file || transcriptionStatus === 'processing'}
                 className="btn-primary w-full py-3 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -532,20 +531,20 @@ export default function App() {
                 <div className="flex gap-4">
                   {activeChunks.length > 0 && (
                     <>
-                      <button 
+                      <button
                         onClick={() => downloadTranscription('txt', activeChunks, activeFilename)}
                         className="flex items-center gap-2 text-sm font-bold text-[var(--accent-color)] hover:underline"
                       >
                         <Download size={16} /> .TXT
                       </button>
-                      <button 
+                      <button
                         onClick={() => downloadTranscription('srt', activeChunks, activeFilename)}
                         className="flex items-center gap-2 text-sm font-bold text-[var(--accent-color)] hover:underline"
                       >
                         <Download size={16} /> .SRT
                       </button>
                       {!activeHistoryId && (
-                        <button 
+                        <button
                           onClick={clearTranscription}
                           className="flex items-center gap-2 text-sm font-bold text-[var(--text-muted)] hover:text-red-500 transition-colors ml-2"
                           title="Clear Output"
@@ -565,7 +564,7 @@ export default function App() {
                     <p>Awaiting configuration...</p>
                   </div>
                 )}
-                
+
                 {transcriptionStatus === 'error' && !activeHistoryId && (
                   <div className="p-4 bg-red-500/10 border-2 border-red-500 text-red-500 flex items-start gap-3">
                     <AlertCircle className="shrink-0" />
@@ -576,7 +575,7 @@ export default function App() {
                 {activeChunks.length > 0 && (
                   <div className="space-y-2 pb-4">
                     {activeChunks.map((chunk: any, i: number) => (
-                      <motion.div 
+                      <motion.div
                         key={i}
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
@@ -591,7 +590,7 @@ export default function App() {
                     <div ref={outputEndRef} />
                   </div>
                 )}
-                
+
                 {transcriptionStatus === 'processing' && !activeHistoryId && (
                   <div className="flex flex-col items-center justify-center gap-4 text-[var(--accent-color)] mt-8 animate-pulse pb-8">
                     <Loader2 className="animate-spin" size={32} />
@@ -601,7 +600,7 @@ export default function App() {
                       </p>
                       {processingStage === 'transcribing' && (
                         <p className="font-mono text-sm font-bold">
-                           Chunk {progressStats.completed} / {progressStats.total}
+                          Chunk {progressStats.completed} / {progressStats.total}
                         </p>
                       )}
                       <p className="font-mono text-sm opacity-70">
@@ -623,7 +622,7 @@ export default function App() {
               <h2 className="text-xl font-bold uppercase tracking-wider border-b-2 border-[var(--border-color)] pb-4 mb-4 shrink-0 flex items-center gap-2">
                 <Clock size={20} /> History
               </h2>
-              
+
               <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
                 {history.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-[var(--text-muted)] opacity-50 text-center">
@@ -636,22 +635,28 @@ export default function App() {
                       onClick={() => setActiveHistoryId(item.id)}
                       className={cn(
                         "w-full text-left p-3 border-2 transition-all flex flex-col gap-1",
-                        activeHistoryId === item.id 
-                          ? "border-[var(--accent-color)] bg-[var(--accent-color)]/10" 
+                        activeHistoryId === item.id
+                          ? "border-[var(--accent-color)] bg-[var(--accent-color)]/10"
                           : "border-[var(--border-color)] opacity-70 hover:opacity-100"
                       )}
                     >
                       <span className="font-bold text-sm truncate w-full">{item.filename}</span>
-                      <span className="text-xs font-mono text-[var(--text-muted)]">
-                        {item.date.toLocaleTimeString()} • {item.chunks.length} chunks
+                      <span className="text-xs font-mono text-[var(--text-muted)] flex justify-between">
+                        {/* make it 12hr format with am pm */}
+                        <span>{item.date.toLocaleString('en-US', {
+                          hour: 'numeric',
+                          minute: 'numeric',
+                          hour12: true
+                        })}</span>
+                        {/* <span>{item.processingTime ? `${Math.floor(item.processingTime / 60)}m ${Math.floor(item.processingTime % 60)}s` : ''}</span> */}
                       </span>
                     </button>
                   ))
                 )}
               </div>
-              
+
               {activeHistoryId && (
-                <button 
+                <button
                   onClick={() => setActiveHistoryId(null)}
                   className="mt-4 w-full py-2 border-2 border-[var(--border-color)] font-bold text-sm hover:bg-[var(--border-color)] hover:text-[var(--bg-color)] transition-colors"
                 >
@@ -662,7 +667,70 @@ export default function App() {
           </div>
 
         </div>
+
+        <footer className="w-full text-center pt-8 pb-4 border-t-2 border-[var(--border-color)] mt-12">
+          <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 text-sm font-bold">
+            <a
+              href="https://rohanprajapati.dev"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-[var(--accent-color)] transition-colors"
+            >
+              Developed by Rohan Prajapati
+            </a>
+            <a
+              href="https://github.com/codeterrayt/SonicScribe"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 hover:text-[var(--accent-color)] transition-colors"
+            >
+              <Github size={16} /> Open Source
+            </a>
+            <button
+              onClick={() => setShowPrivacy(true)}
+              className="flex items-center gap-2 hover:text-[var(--accent-color)] transition-colors"
+            >
+              <Shield size={16} /> Privacy Policy
+            </button>
+          </div>
+        </footer>
       </motion.div>
+
+      <AnimatePresence>
+        {showPrivacy && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowPrivacy(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-[var(--surface-color)] border-2 border-[var(--border-color)] p-8 max-w-md w-full shadow-2xl relative"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setShowPrivacy(false)}
+                className="absolute top-4 right-4 text-[var(--text-muted)] hover:text-[var(--accent-color)]"
+              >
+                <X size={24} />
+              </button>
+              <h2 className="text-2xl font-black uppercase mb-4 flex items-center gap-2">
+                <Shield className="text-[var(--accent-color)]" /> Privacy Policy
+              </h2>
+              <p className="font-mono text-sm leading-relaxed">
+                We dont collect any data properly.
+              </p>
+              <p className="mt-4 text-xs text-[var(--text-muted)]">
+                All processing happens locally on your device using WebAssembly and WebGPU technologies. Your audio files never leave your browser.
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
