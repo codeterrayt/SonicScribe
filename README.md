@@ -3,6 +3,8 @@
 Professional-grade, **on-device transcription** for creators.
 
 SonicScribe runs speech-to-text directly in your browser using **Transformers.js Whisper models** (CPU/WASM or **WebGPU**). Your media stays on your machine for maximum privacy.
+<img width="1905" height="1174" alt="sonicscribe rohanprajapati dev_" src="https://github.com/user-attachments/assets/8b3d9e0e-aefa-4777-adb9-d957115ee71e" />
+
 
 ## Hosted URL
 👉🔗[Sonic Scribe](https://sonicscribe.rohanprajapati.dev/)
