@@ -18,7 +18,7 @@ type Theme = 'theme-light' | 'theme-dark';
 const MODELS = [
   {
     id: 'Xenova/whisper-small',
-    name: 'IndicWhisper-v2 (Small)',
+    name: 'Xenova/whisper-small',
     params: '244M',
     size: '~250MB',
     speed: { wasm: 'Slow (~2x)', webgpu: 'Fast (~15x)' },
@@ -27,7 +27,7 @@ const MODELS = [
   },
   {
     id: 'Xenova/whisper-medium',
-    name: 'Oriserve Whisper-Hindi2Hinglish-Swift',
+    name: 'Xenova/whisper-medium',
     params: '769M',
     size: '~600MB',
     speed: { wasm: 'Very Slow (~0.5x)', webgpu: 'Moderate (~5x)' },
